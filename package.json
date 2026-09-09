@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sync:ffmpeg": "node scripts/sync-ffmpeg-core.mjs",
+    "postinstall": "node scripts/sync-ffmpeg-core.mjs"
   },
   "dependencies": {
     "@ffmpeg/core-mt": "^0.12.10",
