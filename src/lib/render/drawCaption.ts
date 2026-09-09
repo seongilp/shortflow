@@ -1,4 +1,5 @@
 import type { Caption } from '../model/types';
+import { captionFontFamily } from './captionFont';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../model/types';
 
 /**
@@ -10,7 +11,7 @@ const LINE_HEIGHT_RATIO = 1.28;
 
 export function captionFont(caption: Caption): string {
   const { fontSize, fontWeight } = caption.style;
-  return `${fontWeight} ${fontSize}px "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`;
+  return `${fontWeight} ${fontSize}px ${captionFontFamily()}`;
 }
 
 /** 폭을 넘는 줄을 글자 단위로 끊어 담는다. 한 글자도 못 넣는 경우 무한 루프를 막는다. */

@@ -1,6 +1,5 @@
 import type { Caption, Project } from '../model/types';
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../model/types';
-import { clipDurationMs, computeScaleCrop } from '../model/clip';
+import { clipDurationMs, computeCropScale } from '../model/clip';
 import { msToSeconds } from '../model/time';
 
 /** 익스포트 화질 프리셋. crf가 낮을수록 고화질·큰 용량. */
@@ -9,6 +8,13 @@ export interface EncodeSettings {
   readonly preset: string;
   readonly audioBitrate: string;
   readonly fps: number;
+  /**
+   * 인코더 스레드 수.
+   * ffmpeg.wasm 멀티스레드 코어의 pthread 풀은 크기가 고정이라,
+   * libx264가 스레드를 여러 개 요구하면 풀이 말라 exec가 조용히 교착된다.
+   * 1로 묶어야 안정적으로 끝난다.
+   */
+  readonly threads: number;
 }
 
 export const DEFAULT_ENCODE: EncodeSettings = {
@@ -16,6 +22,7 @@ export const DEFAULT_ENCODE: EncodeSettings = {
   preset: 'veryfast',
   audioBitrate: '128k',
   fps: 30,
+  threads: 1,
 };
 
 /** ffmpeg 가상 파일시스템에 올라간 파일들. */
@@ -117,21 +124,27 @@ export function buildExportCommand(
   encode: EncodeSettings = DEFAULT_ENCODE,
 ): string[] {
   const { source, clip, captions } = project;
-  const crop = computeScaleCrop(source, clip.transform);
+  const crop = computeCropScale(source, clip.transform);
   const entries = renderableCaptions(captions, inputs.captionPngNames);
   const firstCaptionInputIndex = inputs.musicName ? 2 : 1;
 
   const videoTrim =
     `[0:v]trim=start=${msToSeconds(clip.inMs)}:end=${msToSeconds(clip.outMs)},` +
     `setpts=PTS-STARTPTS,fps=${encode.fps},` +
-    `scale=${crop.scaledWidth}:${crop.scaledHeight},` +
-    `crop=${CANVAS_WIDTH}:${CANVAS_HEIGHT}:${crop.cropX}:${crop.cropY}[v0]`;
+    // 크롭을 먼저 해서 스케일이 처리할 픽셀 수를 줄인다. 순서를 바꾸면 크게 느려진다.
+    `crop=${crop.cropWidth}:${crop.cropHeight}:${crop.cropX}:${crop.cropY},` +
+    `scale=${crop.outWidth}:${crop.outHeight}[v0]`;
 
   const overlay = captionOverlayChain(entries, firstCaptionInputIndex, '[v0]');
   const audio = audioFilters(project, inputs);
   const filterComplex = [videoTrim, ...overlay.filters, ...audio.filters].join(';');
 
   return [
+    // 스레드 제한은 전역·필터·인코더 세 군데 모두 걸어야 한다.
+    // 어느 하나라도 풀리면 pthread 풀이 말라 exec가 조용히 교착된다.
+    '-threads', String(encode.threads),
+    '-filter_threads', String(encode.threads),
+    '-filter_complex_threads', String(encode.threads),
     '-i', inputs.sourceName,
     ...(inputs.musicName ? ['-i', inputs.musicName] : []),
     ...entries.flatMap(({ pngName }) => ['-i', pngName]),
@@ -139,6 +152,7 @@ export function buildExportCommand(
     '-map', overlay.outLabel,
     ...(audio.outLabel ? ['-map', audio.outLabel] : ['-an']),
     '-c:v', 'libx264',
+    '-threads', String(encode.threads),
     '-preset', encode.preset,
     '-crf', String(encode.crf),
     '-pix_fmt', 'yuv420p',

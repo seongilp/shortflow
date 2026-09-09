@@ -93,30 +93,53 @@ export function computeSourceLayout(
 }
 
 /**
- * 위 배치를 ffmpeg scale+crop 인자로 옮긴다.
- * 캔버스 좌표계의 drawX/drawY가 음수이므로 crop 시작점은 그 부호를 뒤집은 값이다.
+ * 위 배치를 ffmpeg 인자로 옮긴다.
+ *
+ * 캔버스에 그려질 영역을 소스 좌표계로 되돌려 "먼저 크롭하고 그다음 스케일"한다.
+ * 반대 순서(스케일 후 크롭)는 결과가 같지만, 가로 영상을 9:16에 맞출 때
+ * 프레임을 3400px 폭까지 키운 뒤 버리게 되어 wasm에서 인코딩이 수 배 느려진다.
  */
-export interface ScaleCropParams {
-  readonly scaledWidth: number;
-  readonly scaledHeight: number;
+export interface CropScaleParams {
+  readonly cropWidth: number;
+  readonly cropHeight: number;
   readonly cropX: number;
   readonly cropY: number;
+  readonly outWidth: number;
+  readonly outHeight: number;
 }
 
-export function computeScaleCrop(
+/** 짝수로 맞춘다. 홀수 크기를 받지 못하는 인코더가 있다. */
+function toEven(value: number): number {
+  return 2 * Math.round(value / 2);
+}
+
+export function computeCropScale(
   asset: Pick<MediaAsset, 'width' | 'height'>,
   transform: Transform,
   canvasWidth = CANVAS_WIDTH,
   canvasHeight = CANVAS_HEIGHT,
-): ScaleCropParams {
+): CropScaleParams {
   const layout = computeSourceLayout(asset, transform, canvasWidth, canvasHeight);
-  // ffmpeg는 홀수 크기를 다루지 못하는 인코더가 있어 짝수로 맞춘다.
-  const scaledWidth = Math.max(canvasWidth, 2 * Math.round(layout.drawWidth / 2));
-  const scaledHeight = Math.max(canvasHeight, 2 * Math.round(layout.drawHeight / 2));
+  // 캔버스 1px이 소스 몇 px인지. drawWidth는 소스 폭에 배율을 곱한 값이다.
+  const pxPerSource = layout.drawWidth / asset.width;
+
+  const cropWidth = clamp(
+    toEven(canvasWidth / pxPerSource),
+    2,
+    toEven(asset.width),
+  );
+  const cropHeight = clamp(
+    toEven(canvasHeight / pxPerSource),
+    2,
+    toEven(asset.height),
+  );
+
   return {
-    scaledWidth,
-    scaledHeight,
-    cropX: clamp(Math.round(-layout.drawX), 0, scaledWidth - canvasWidth),
-    cropY: clamp(Math.round(-layout.drawY), 0, scaledHeight - canvasHeight),
+    cropWidth,
+    cropHeight,
+    cropX: clamp(Math.round(-layout.drawX / pxPerSource), 0, asset.width - cropWidth),
+    cropY: clamp(Math.round(-layout.drawY / pxPerSource), 0, asset.height - cropHeight),
+    outWidth: canvasWidth,
+    outHeight: canvasHeight,
   };
 }

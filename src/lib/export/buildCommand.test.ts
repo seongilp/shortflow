@@ -32,9 +32,16 @@ describe('buildExportCommand — 영상', () => {
       .toContain('trim=start=2.000:end=7.500');
   });
 
-  it('9:16 캔버스 크기로 크롭한다', () => {
-    expect(filterOf(buildExportCommand(baseProject(), inputs())))
-      .toContain(`crop=${CANVAS_WIDTH}:${CANVAS_HEIGHT}:`);
+  it('크롭을 먼저 하고 9:16으로 스케일한다', () => {
+    const filter = filterOf(buildExportCommand(baseProject(), inputs()));
+    expect(filter).toMatch(/crop=\d+:\d+:\d+:\d+,scale=1080:1920/);
+  });
+
+  it('소스보다 큰 중간 해상도를 만들지 않는다', () => {
+    const filter = filterOf(buildExportCommand(baseProject(), inputs()));
+    const [, w, h] = /crop=(\d+):(\d+):/.exec(filter)!;
+    expect(Number(w)).toBeLessThanOrEqual(1920);
+    expect(Number(h)).toBeLessThanOrEqual(1080);
   });
 
   it('출력 파일명과 덮어쓰기 플래그를 마지막에 둔다', () => {
@@ -44,6 +51,18 @@ describe('buildExportCommand — 영상', () => {
 
   it('yuv420p로 고정해 재생 호환성을 지킨다', () => {
     expect(buildExportCommand(baseProject(), inputs())).toContain('yuv420p');
+  });
+
+  it('전역·필터·인코더 스레드를 모두 1로 묶는다 — pthread 풀 고갈로 인한 교착을 막는다', () => {
+    const argv = buildExportCommand(baseProject(), inputs());
+    for (const flag of ['-threads', '-filter_threads', '-filter_complex_threads']) {
+      expect(argv[argv.indexOf(flag) + 1]).toBe('1');
+    }
+  });
+
+  it('전역 스레드 제한을 첫 입력보다 앞에 둔다', () => {
+    const argv = buildExportCommand(baseProject(), inputs());
+    expect(argv.indexOf('-threads')).toBeLessThan(argv.indexOf('-i'));
   });
 });
 

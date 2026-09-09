@@ -22,7 +22,6 @@ import { clamp } from '@/lib/model/time';
 
 export interface SourceFiles {
   readonly video: Blob;
-  readonly hasAudio: boolean;
   readonly music: Blob | null;
 }
 

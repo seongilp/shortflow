@@ -2,8 +2,10 @@ import { fetchFile } from '@ffmpeg/util';
 import type { Project } from '../model/types';
 import { clipDurationMs } from '../model/clip';
 import { captionToPng, isRenderableCaption } from '../render/captionToPng';
+import { waitForCaptionFont } from '../render/captionFont';
 import { DEFAULT_ENCODE, buildExportCommand, type EncodeSettings, type ExportInputs } from './buildCommand';
 import { FFmpegLoadError, getFFmpeg } from './ffmpegClient';
+import type { FFmpeg } from '@ffmpeg/ffmpeg';
 
 export type ExportPhase = 'loading' | 'preparing' | 'encoding' | 'finishing';
 
@@ -15,7 +17,6 @@ export interface ExportProgress {
 
 export interface ExportOptions {
   readonly sourceFile: Blob;
-  readonly sourceHasAudio: boolean;
   readonly musicFile?: Blob | null;
   readonly encode?: EncodeSettings;
   readonly onProgress?: (progress: ExportProgress) => void;
@@ -78,6 +79,9 @@ export async function exportProject(
       written.push(MUSIC_NAME);
     }
 
+    // 폰트가 아직 로드 중이면 PNG가 대체 폰트로 구워져 프리뷰와 어긋난다.
+    await waitForCaptionFont();
+
     const captionPngNames = new Map<string, string>();
     const renderable = project.captions.filter(isRenderableCaption);
     for (const [index, caption] of renderable.entries()) {
@@ -90,7 +94,7 @@ export async function exportProject(
 
     const inputs: ExportInputs = {
       sourceName: SOURCE_NAME,
-      sourceHasAudio: options.sourceHasAudio,
+      sourceHasAudio: await detectAudioStream(ffmpeg, SOURCE_NAME),
       musicName,
       captionPngNames,
       outputName: OUTPUT_NAME,
@@ -132,6 +136,30 @@ export async function exportProject(
       written.map((name) => ffmpeg.deleteFile(name).catch(() => undefined)),
     );
   }
+}
+
+/**
+ * 소스에 오디오 스트림이 있는지 ffmpeg에 직접 묻는다.
+ *
+ * 브라우저에는 신뢰할 만한 판별 수단이 없다. Chromium의 webkitAudioDecodedByteCount는
+ * 재생을 시작하기 전까지 0이라 무음으로 오판하고, audioTracks는 기본 비활성이다.
+ * 잘못 판단하면 소리가 조용히 사라지거나 필터 그래프가 없는 스트림을 참조해 실패한다.
+ */
+async function detectAudioStream(ffmpeg: FFmpeg, fileName: string): Promise<boolean> {
+  const lines: string[] = [];
+  const handler = ({ message }: { message: string }) => lines.push(message);
+
+  ffmpeg.on('log', handler);
+  try {
+    // 출력 파일을 주지 않아 항상 실패하지만, 그 전에 스트림 정보를 찍는다.
+    await ffmpeg.exec(['-hide_banner', '-i', fileName]);
+  } catch {
+    // 종료 코드는 의미가 없다. 로그만 본다.
+  } finally {
+    ffmpeg.off('log', handler);
+  }
+
+  return lines.some((line) => /Stream #\d+:\d+.*: Audio:/.test(line));
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

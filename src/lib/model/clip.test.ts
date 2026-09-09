@@ -4,7 +4,7 @@ import {
   MAX_SCALE,
   MIN_CLIP_MS,
   clipDurationMs,
-  computeScaleCrop,
+  computeCropScale,
   computeSourceLayout,
   createClip,
   setTransform,
@@ -106,22 +106,51 @@ describe('computeSourceLayout', () => {
   });
 });
 
-describe('computeScaleCrop', () => {
-  it('크롭 영역이 캔버스 밖으로 나가지 않는다', () => {
-    const params = computeScaleCrop(asset(), { scale: 2, offsetX: 9999, offsetY: 9999 });
-    expect(params.cropX + CANVAS_WIDTH).toBeLessThanOrEqual(params.scaledWidth);
-    expect(params.cropY + CANVAS_HEIGHT).toBeLessThanOrEqual(params.scaledHeight);
+describe('computeCropScale', () => {
+  it('소스 해상도 안에서 크롭한다', () => {
+    const params = computeCropScale(asset(), IDENTITY_TRANSFORM);
+    expect(params.cropX + params.cropWidth).toBeLessThanOrEqual(1920);
+    expect(params.cropY + params.cropHeight).toBeLessThanOrEqual(1080);
   });
 
-  it('스케일 결과가 항상 짝수다', () => {
-    const params = computeScaleCrop(asset({ width: 1919, height: 1079 }), IDENTITY_TRANSFORM);
-    expect(params.scaledWidth % 2).toBe(0);
-    expect(params.scaledHeight % 2).toBe(0);
+  it('출력은 항상 9:16 캔버스 크기다', () => {
+    const params = computeCropScale(asset(), { scale: 2.5, offsetX: 300, offsetY: -200 });
+    expect(params.outWidth).toBe(CANVAS_WIDTH);
+    expect(params.outHeight).toBe(CANVAS_HEIGHT);
   });
 
-  it('중앙 정렬이면 좌우가 대칭으로 잘린다', () => {
-    const params = computeScaleCrop(asset(), IDENTITY_TRANSFORM);
-    expect(params.cropX).toBe(Math.round((params.scaledWidth - CANVAS_WIDTH) / 2));
+  it('가로 영상은 세로를 다 쓰고 좌우만 잘라낸다', () => {
+    const params = computeCropScale(asset(), IDENTITY_TRANSFORM);
+    expect(params.cropHeight).toBe(1080);
+    expect(params.cropWidth).toBeLessThan(1920);
     expect(params.cropY).toBe(0);
+  });
+
+  it('크롭 폭이 소스보다 작아 스케일이 축소로 동작한다', () => {
+    // 확대 없이 가로 영상을 세로로 맞추면 잘라낸 영역이 출력보다 좁을 수 있지만,
+    // 어느 경우에도 3400px 같은 중간 확대가 생기지 않아야 한다.
+    const params = computeCropScale(asset(), IDENTITY_TRANSFORM);
+    expect(params.cropWidth).toBeLessThanOrEqual(1920);
+    expect(params.cropHeight).toBeLessThanOrEqual(1080);
+  });
+
+  it('확대하면 잘라내는 영역이 좁아진다', () => {
+    const wide = computeCropScale(asset(), IDENTITY_TRANSFORM);
+    const zoomed = computeCropScale(asset(), { scale: 2, offsetX: 0, offsetY: 0 });
+    expect(zoomed.cropWidth).toBeLessThan(wide.cropWidth);
+    expect(zoomed.cropHeight).toBeLessThan(wide.cropHeight);
+  });
+
+  it('크롭 크기가 항상 짝수다', () => {
+    const params = computeCropScale(asset({ width: 1919, height: 1079 }), IDENTITY_TRANSFORM);
+    expect(params.cropWidth % 2).toBe(0);
+    expect(params.cropHeight % 2).toBe(0);
+  });
+
+  it('이동량이 과해도 소스 밖을 가리키지 않는다', () => {
+    const params = computeCropScale(asset(), { scale: 2, offsetX: 99_999, offsetY: 99_999 });
+    expect(params.cropX).toBeGreaterThanOrEqual(0);
+    expect(params.cropY).toBeGreaterThanOrEqual(0);
+    expect(params.cropX + params.cropWidth).toBeLessThanOrEqual(1920);
   });
 });
