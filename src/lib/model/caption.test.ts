@@ -6,6 +6,7 @@ import {
   createCaption,
   defaultCaptionRange,
   removeCaption,
+  resizeCaption,
   retimeCaption,
   shiftCaption,
   sortCaptions,
@@ -134,5 +135,60 @@ describe('defaultCaptionRange', () => {
     const range = defaultCaptionRange(9990, 10_000);
     expect(range.endMs - range.startMs).toBeGreaterThanOrEqual(MIN_CAPTION_MS);
     expect(range.startMs).toBeLessThanOrEqual(10_000 - MIN_CAPTION_MS);
+  });
+});
+
+describe('resizeCaption', () => {
+  const cues = () => [cue(2000, 6000)];
+
+  it('시작만 움직이고 종료는 그대로 둔다', () => {
+    const [caption] = cues();
+    const [next] = resizeCaption([caption], caption.id, 'start', 3000, 20_000);
+    expect(next.startMs).toBe(3000);
+    expect(next.endMs).toBe(6000);
+  });
+
+  it('종료만 움직이고 시작은 그대로 둔다', () => {
+    const [caption] = cues();
+    const [next] = resizeCaption([caption], caption.id, 'end', 9000, 20_000);
+    expect(next.startMs).toBe(2000);
+    expect(next.endMs).toBe(9000);
+  });
+
+  it('시작을 종료 너머로 끌어도 종료를 밀어내지 않는다', () => {
+    const [caption] = cues();
+    const [next] = resizeCaption([caption], caption.id, 'start', 99_000, 20_000);
+    expect(next.endMs).toBe(6000);
+    expect(next.startMs).toBe(6000 - MIN_CAPTION_MS);
+  });
+
+  it('종료를 시작 앞으로 끌어도 시작을 밀어내지 않는다', () => {
+    const [caption] = cues();
+    const [next] = resizeCaption([caption], caption.id, 'end', 0, 20_000);
+    expect(next.startMs).toBe(2000);
+    expect(next.endMs).toBe(2000 + MIN_CAPTION_MS);
+  });
+
+  it('시작은 0 아래로 내려가지 않는다', () => {
+    const [caption] = cues();
+    const [next] = resizeCaption([caption], caption.id, 'start', -5000, 20_000);
+    expect(next.startMs).toBe(0);
+  });
+
+  it('종료는 타임라인 끝을 넘지 않는다', () => {
+    const [caption] = cues();
+    const [next] = resizeCaption([caption], caption.id, 'end', 99_000, 8000);
+    expect(next.endMs).toBe(8000);
+  });
+
+  it('없는 id는 배열을 그대로 돌려준다', () => {
+    const captions = cues();
+    expect(resizeCaption(captions, 'nope', 'end', 5000, 20_000)).toBe(captions);
+  });
+
+  it('원본 객체를 변형하지 않는다', () => {
+    const [caption] = cues();
+    resizeCaption([caption], caption.id, 'start', 4000, 20_000);
+    expect(caption.startMs).toBe(2000);
   });
 });

@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import type { Caption, CaptionStyle, MediaAsset, MusicTrack, Project, Transform } from '@/lib/model/types';
+import type { CaptionEdge } from '@/lib/model/caption';
 import {
   addCaption,
   createCaption,
   defaultCaptionRange,
   removeCaption,
+  resizeCaption,
   retimeCaption,
   shiftCaption,
   updateCaption,
@@ -52,6 +54,7 @@ interface EditorState {
   editCaptionStyle: (id: string, style: Partial<CaptionStyle>) => void;
   moveCaptionPosition: (id: string, xRatio: number, yRatio: number) => void;
   retime: (id: string, startMs: number, endMs: number) => void;
+  resize: (id: string, edge: CaptionEdge, timeMs: number) => void;
   shift: (id: string, startMs: number) => void;
   deleteCaption: (id: string) => void;
 }
@@ -161,6 +164,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) =>
       mapCaptions(state, (captions, project) =>
         retimeCaption(captions, id, startMs, endMs, projectDurationMs(project)),
+      ),
+    ),
+
+  resize: (id, edge, timeMs) =>
+    set((state) =>
+      mapCaptions(state, (captions, project) =>
+        resizeCaption(captions, id, edge, timeMs, projectDurationMs(project)),
       ),
     ),
 

@@ -90,6 +90,37 @@ export function retimeCaption(
   return updateCaption(captions, id, { startMs: nextStart, endMs: nextEnd });
 }
 
+export type CaptionEdge = 'start' | 'end';
+
+/**
+ * 큐의 한쪽 끝만 움직인다. 반대쪽 끝은 그대로 있고, 최소 길이보다 짧아지지 않는다.
+ *
+ * retimeCaption과 다른 점: 끌던 끝이 반대쪽을 지나가도 반대쪽을 밀어내지 않고
+ * 최소 길이 지점에서 멈춘다. 타임라인에서 폭을 조절할 때 기대하는 동작이다.
+ */
+export function resizeCaption(
+  captions: readonly Caption[],
+  id: string,
+  edge: CaptionEdge,
+  timeMs: number,
+  durationMs: number,
+): readonly Caption[] {
+  const caption = captions.find((item) => item.id === id);
+  if (!caption) return captions;
+
+  if (edge === 'start') {
+    const startMs = clamp(Math.round(timeMs), 0, caption.endMs - MIN_CAPTION_MS);
+    return updateCaption(captions, id, { startMs });
+  }
+
+  const endMs = clamp(
+    Math.round(timeMs),
+    caption.startMs + MIN_CAPTION_MS,
+    Math.max(durationMs, caption.startMs + MIN_CAPTION_MS),
+  );
+  return updateCaption(captions, id, { endMs });
+}
+
 /** 큐 길이를 유지한 채 통째로 이동한다. 타임라인 드래그용. */
 export function shiftCaption(
   captions: readonly Caption[],
