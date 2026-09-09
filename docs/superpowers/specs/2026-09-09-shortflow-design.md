@@ -132,14 +132,41 @@ src/components/
 
 1. 각 자막 큐를 `captionToPng`로 투명 PNG 생성 (캔버스 전체 크기)
 2. ffmpeg 가상 FS에 원본 영상, BGM, 자막 PNG들을 write
-3. `buildExportCommand`로 argv 생성
+3. 소스의 오디오 스트림 유무를 ffmpeg로 실측
+4. `buildExportCommand`로 argv 생성
    - `trim`/`setpts`로 클립 구간 추출
-   - `scale`/`crop`으로 9:16 리프레임 적용
+   - `crop` 후 `scale`로 9:16 리프레임 적용
    - 자막 PNG마다 `overlay=enable='between(t,s,e)'` 체인
    - 오디오는 `volume` + `amix`(BGM 있을 때)
    - `libx264 -preset veryfast -crf 23`, `aac 128k`, `+faststart`
-4. 실행하며 진행률 콜백을 스토어에 반영
-5. 결과 파일을 Blob으로 읽어 다운로드 링크 생성
+5. 실행하며 진행률과 마지막 로그 한 줄을 UI에 반영
+6. 결과 파일을 Blob으로 읽어 다운로드 링크 생성. 가상 FS의 임시 파일은 반드시 정리
+
+### 브라우저 실측으로 확인한 제약
+
+세 가지는 문서로 유추할 수 없고 실제로 돌려봐야 드러났다. 되돌리면 다시 깨진다.
+
+**크롭을 스케일보다 먼저 한다.** 반대 순서는 결과가 같지만, 1920×1080 소스를
+9:16에 맞출 때 프레임을 3413×1920까지 키운 뒤 대부분을 버린다. 프레임당 6.5MP를
+처리하게 되어 wasm에서 인코딩이 끝나지 않는 수준으로 느려졌다.
+
+**스레드를 전역·필터·인코더 세 군데 모두 1로 묶는다.** ffmpeg.wasm 멀티스레드
+코어의 pthread 풀은 크기가 고정이다. libx264가 스레드를 여러 개 요구하면 풀이
+말라 `exec`가 오류도 로그도 없이 교착된다. 어느 한 곳이라도 빠지면 재발한다.
+
+**오디오 스트림 유무는 ffmpeg에 묻는다.** 브라우저에는 신뢰할 만한 판별 수단이
+없다. Chromium의 `webkitAudioDecodedByteCount`는 재생 전까지 0이라 소리 있는
+영상을 무음으로 오판하고, `audioTracks`는 기본 비활성이다. 잘못 판단하면 소리가
+조용히 사라진다.
+
+## 유튜브 URL 가져오기
+
+yt-dlp는 네이티브 바이너리라 브라우저에서 돌지 않아 서버 경유가 필요하다.
+`POST /api/import/youtube`가 `child_process`로 yt-dlp를 실행하고 MP4를 스트리밍한다.
+
+배포 환경에서는 비활성화한다. 데이터센터 IP는 유튜브가 봇으로 차단하므로
+production에서 열어두면 실패만 하는 기능이 된다. URL은 Zod로 검증해 유튜브
+호스트만 통과시키고, 인자 배열로 넘겨 셸 해석을 거치지 않는다.
 
 ## 오류 처리
 
