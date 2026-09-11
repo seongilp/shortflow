@@ -14,6 +14,7 @@ export function usePlayback(video: HTMLVideoElement | null): void {
   const project = useEditorStore((state) => state.project);
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const playheadMs = useEditorStore((state) => state.playheadMs);
+  const scrubMs = useEditorStore((state) => state.scrubMs);
   const seek = useEditorStore((state) => state.seek);
   const setPlaying = useEditorStore((state) => state.setPlaying);
 
@@ -26,10 +27,12 @@ export function usePlayback(video: HTMLVideoElement | null): void {
   }, [project, seek, setPlaying]);
 
   // 정지 상태에서의 seek 반영. 재생 중에는 루프가 주도하므로 건드리지 않는다.
+  // 스크럽 중이면 재생 헤드 대신 마우스가 가리키는 지점을 보여준다.
+  const previewMs = scrubMs ?? playheadMs;
   useEffect(() => {
     if (!video || !project || isPlaying) return;
-    seekVideo(video, timelineToSourceMs(project.clip, playheadMs) / 1000, 0.05);
-  }, [video, project, playheadMs, isPlaying]);
+    seekVideo(video, timelineToSourceMs(project.clip, previewMs) / 1000, 0.05);
+  }, [video, project, previewMs, isPlaying]);
 
   useEffect(() => {
     if (!video || !project) return;

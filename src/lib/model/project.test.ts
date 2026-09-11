@@ -39,11 +39,56 @@ describe('clampCaptions', () => {
 });
 
 describe('withClip', () => {
-  it('트림으로 짧아지면 자막도 함께 정리한다', () => {
+  const withCues = (...cues: { startMs: number; endMs: number }[]) => {
     const base = createProject(asset());
-    const project = { ...base, captions: [createCaption({ startMs: 20_000, endMs: 22_000 })] };
+    return { ...base, captions: cues.map((cue) => createCaption(cue)) };
+  };
+
+  it('트림으로 짧아지면 자막도 함께 정리한다', () => {
+    const project = withCues({ startMs: 20_000, endMs: 22_000 });
     const next = withClip(project, setTrim(project.clip, 0, 10_000, 30_000));
     expect(next.captions).toHaveLength(0);
+  });
+
+  it('시작점을 뒤로 옮기면 자막을 그만큼 앞으로 민다', () => {
+    // 앞을 2초 자르면, 내용상 5초 지점의 자막은 타임라인 3초가 된다.
+    const project = withCues({ startMs: 5000, endMs: 7000 });
+    const next = withClip(project, setTrim(project.clip, 2000, 30_000, 30_000));
+    expect(next.captions[0].startMs).toBe(3000);
+    expect(next.captions[0].endMs).toBe(5000);
+  });
+
+  it('시작점을 앞으로 되돌리면 자막도 되돌아온다', () => {
+    const project = withCues({ startMs: 5000, endMs: 7000 });
+    const trimmed = withClip(project, setTrim(project.clip, 2000, 30_000, 30_000));
+    const restored = withClip(trimmed, setTrim(trimmed.clip, 0, 30_000, 30_000));
+    expect(restored.captions[0].startMs).toBe(5000);
+    expect(restored.captions[0].endMs).toBe(7000);
+  });
+
+  it('시작점 이동으로 앞으로 밀려난 자막은 경계에서 잘린다', () => {
+    const project = withCues({ startMs: 1000, endMs: 5000 });
+    const next = withClip(project, setTrim(project.clip, 3000, 30_000, 30_000));
+    expect(next.captions[0].startMs).toBe(0);
+    expect(next.captions[0].endMs).toBe(2000);
+  });
+
+  it('시작점보다 완전히 앞에 있던 자막은 버린다', () => {
+    const project = withCues({ startMs: 1000, endMs: 2000 });
+    const next = withClip(project, setTrim(project.clip, 5000, 30_000, 30_000));
+    expect(next.captions).toHaveLength(0);
+  });
+
+  it('끝점만 바꾸면 자막을 밀지 않는다', () => {
+    const project = withCues({ startMs: 1000, endMs: 3000 });
+    const next = withClip(project, setTrim(project.clip, 0, 8000, 30_000));
+    expect(next.captions[0].startMs).toBe(1000);
+  });
+
+  it('원본 프로젝트를 변형하지 않는다', () => {
+    const project = withCues({ startMs: 5000, endMs: 7000 });
+    withClip(project, setTrim(project.clip, 2000, 30_000, 30_000));
+    expect(project.captions[0].startMs).toBe(5000);
   });
 });
 

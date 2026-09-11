@@ -6,6 +6,15 @@ import { projectDurationMs } from '@/lib/model/project';
 
 const STEP_MS = 100;
 
+/** 재생 헤드를 기준으로 앞이나 뒤를 잘라낸다. 타임라인 호버 버튼과 같은 동작이다. */
+function cutAtPlayhead(side: 'before' | 'after'): void {
+  const { project, playheadMs, trim } = useEditorStore.getState();
+  if (!project) return;
+  const sourceMs = project.clip.inMs + playheadMs;
+  if (side === 'before') trim(sourceMs, project.clip.outMs);
+  else trim(project.clip.inMs, sourceMs);
+}
+
 export function PlaybackControls() {
   const project = useEditorStore((state) => state.project);
   const isPlaying = useEditorStore((state) => state.isPlaying);
@@ -29,6 +38,10 @@ export function PlaybackControls() {
         seek(useEditorStore.getState().playheadMs + STEP_MS);
       } else if (event.key.toLowerCase() === 't') {
         addCaptionAtPlayhead();
+      } else if (event.key.toLowerCase() === 'i') {
+        cutAtPlayhead('before');
+      } else if (event.key.toLowerCase() === 'o') {
+        cutAtPlayhead('after');
       }
     };
 
@@ -52,7 +65,7 @@ export function PlaybackControls() {
       </button>
       <ControlButton label="▶" onClick={() => seek(playheadMs + STEP_MS)} title="0.1초 앞으로" />
       <ControlButton label="⏭" onClick={() => seek(durationMs)} title="끝으로" />
-      <span className="ml-3 text-[11px] text-neutral-600">스페이스 재생 · T 자막 추가</span>
+      <span className="ml-3 text-[11px] text-neutral-600">스페이스 재생 · T 자막 · I/O 앞뒤 자르기</span>
     </div>
   );
 }

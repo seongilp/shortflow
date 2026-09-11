@@ -25,17 +25,21 @@ export function PlayerCanvas() {
 
   const project = useEditorStore((state) => state.project);
   const playheadMs = useEditorStore((state) => state.playheadMs);
+  const scrubMs = useEditorStore((state) => state.scrubMs);
   const selectedCaptionId = useEditorStore((state) => state.selectedCaptionId);
   const selectCaption = useEditorStore((state) => state.selectCaption);
   const moveCaptionPosition = useEditorStore((state) => state.moveCaptionPosition);
 
   usePlayback(videoEl);
 
+  // 스크럽 중이면 마우스가 가리키는 지점을, 아니면 재생 헤드를 그린다.
+  const previewMs = scrubMs ?? playheadMs;
+
   // 렌더 루프가 읽는 최신 상태. 의존성에 넣으면 매 프레임 루프를 재시작하게 된다.
-  const frameRef = useRef({ project, playheadMs, selectedCaptionId });
+  const frameRef = useRef({ project, previewMs, selectedCaptionId });
   useEffect(() => {
-    frameRef.current = { project, playheadMs, selectedCaptionId };
-  }, [project, playheadMs, selectedCaptionId]);
+    frameRef.current = { project, previewMs, selectedCaptionId };
+  }, [project, previewMs, selectedCaptionId]);
 
   // 루프는 마운트 동안 한 번만 돈다.
   useEffect(() => {
@@ -54,7 +58,7 @@ export function PlayerCanvas() {
           ctx,
           video,
           frame.project,
-          frame.playheadMs,
+          frame.previewMs,
           frame.selectedCaptionId,
         );
         boxesRef.current = result.boxes;

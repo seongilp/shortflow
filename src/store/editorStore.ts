@@ -32,6 +32,8 @@ interface EditorState {
   /** 원본 파일은 직렬화 대상이 아니라 프로젝트 모델 밖에 둔다. */
   files: SourceFiles | null;
   playheadMs: number;
+  /** 타임라인 위에서 마우스를 따라다니는 미리보기 시각. 재생 헤드는 건드리지 않는다. */
+  scrubMs: number | null;
   isPlaying: boolean;
   selectedCaptionId: string | null;
   error: string | null;
@@ -41,6 +43,7 @@ interface EditorState {
   setError: (message: string | null) => void;
 
   seek: (timeMs: number) => void;
+  setScrub: (timeMs: number | null) => void;
   setPlaying: (playing: boolean) => void;
 
   trim: (inMs: number, outMs: number) => void;
@@ -83,6 +86,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   project: null,
   files: null,
   playheadMs: 0,
+  scrubMs: null,
   isPlaying: false,
   selectedCaptionId: null,
   error: null,
@@ -92,13 +96,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       project: createProject(asset),
       files,
       playheadMs: 0,
+      scrubMs: null,
       isPlaying: false,
       selectedCaptionId: null,
       error: null,
     }),
 
   closeProject: () =>
-    set({ project: null, files: null, playheadMs: 0, isPlaying: false, selectedCaptionId: null }),
+    set({
+      project: null,
+      files: null,
+      playheadMs: 0,
+      scrubMs: null,
+      isPlaying: false,
+      selectedCaptionId: null,
+    }),
 
   setError: (message) => set({ error: message }),
 
@@ -109,14 +121,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         : 0,
     })),
 
-  setPlaying: (playing) => set({ isPlaying: playing }),
+  setScrub: (timeMs) =>
+    set((state) => {
+      if (timeMs === null) return { scrubMs: null };
+      // 재생 중에는 화면이 재생을 따라야 한다. 스크럽이 끼어들면 프레임이 튄다.
+      if (!state.project || state.isPlaying) return {};
+      return { scrubMs: clamp(timeMs, 0, projectDurationMs(state.project)) };
+    }),
+
+  setPlaying: (playing) => set({ isPlaying: playing, scrubMs: null }),
 
   trim: (inMs, outMs) =>
-    set((state) =>
-      mapProject(state, (project) =>
-        withClip(project, setTrim(project.clip, inMs, outMs, project.source.durationMs)),
-      ),
-    ),
+    set((state) => {
+      if (!state.project) return {};
+      const previousInMs = state.project.clip.inMs;
+      const project = withClip(
+        state.project,
+        setTrim(state.project.clip, inMs, outMs, state.project.source.durationMs),
+      );
+      // 시작점이 움직이면 타임라인 원점도 움직인다.
+      // 재생 헤드를 그만큼 밀어야 같은 장면을 계속 가리킨다. 자막도 같은 이유로 밀린다.
+      const shiftedPlayhead = state.playheadMs - (project.clip.inMs - previousInMs);
+      return {
+        project,
+        playheadMs: clamp(shiftedPlayhead, 0, projectDurationMs(project)),
+        scrubMs: null,
+      };
+    }),
 
   reframe: (patch) =>
     set((state) =>

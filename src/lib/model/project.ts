@@ -21,8 +21,25 @@ export function projectDurationMs(project: Project): number {
   return clipDurationMs(project.clip);
 }
 
+/**
+ * 클립을 갈아끼운다.
+ *
+ * 자막 시각은 클립 시작(0) 기준이므로, 시작점이 움직이면 타임라인 원점도 함께 움직인다.
+ * 그만큼 자막을 밀어주지 않으면 앞을 잘라낼 때마다 자막이 내용에서 어긋난다.
+ */
 export function withClip(project: Project, clip: Clip): Project {
-  return { ...project, clip, captions: clampCaptions(project.captions, clipDurationMs(clip)) };
+  const shiftMs = clip.inMs - project.clip.inMs;
+  const shifted = shiftMs === 0 ? project.captions : shiftCaptions(project.captions, -shiftMs);
+  return { ...project, clip, captions: clampCaptions(shifted, clipDurationMs(clip)) };
+}
+
+/** 모든 큐를 같은 양만큼 민다. 0보다 앞으로 나간 큐는 clampCaptions가 정리한다. */
+function shiftCaptions(captions: readonly Caption[], deltaMs: number): readonly Caption[] {
+  return captions.map((caption) => ({
+    ...caption,
+    startMs: caption.startMs + deltaMs,
+    endMs: caption.endMs + deltaMs,
+  }));
 }
 
 export function withCaptions(project: Project, captions: readonly Caption[]): Project {
@@ -38,18 +55,22 @@ export function withSourceVolume(project: Project, volume: number): Project {
 }
 
 /**
- * 트림으로 타임라인이 짧아지면 바깥으로 밀려난 자막이 생긴다.
- * 범위를 벗어난 큐는 잘라내고, 완전히 벗어난 큐는 버린다.
+ * 트림으로 타임라인이 좁아지면 바깥으로 밀려난 자막이 생긴다.
+ * 걸쳐 있는 큐는 경계까지 잘라내고, 완전히 벗어난 큐는 버린다.
  */
 export function clampCaptions(
   captions: readonly Caption[],
   durationMs: number,
 ): readonly Caption[] {
   return captions
-    .filter((caption) => caption.startMs < durationMs)
-    .map((caption) =>
-      caption.endMs <= durationMs ? caption : { ...caption, endMs: durationMs },
-    );
+    .filter((caption) => caption.startMs < durationMs && caption.endMs > 0)
+    .map((caption) => {
+      const startMs = Math.max(0, caption.startMs);
+      const endMs = Math.min(durationMs, caption.endMs);
+      return startMs === caption.startMs && endMs === caption.endMs
+        ? caption
+        : { ...caption, startMs, endMs };
+    });
 }
 
 export interface ImportValidationError {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { projectDurationMs } from '@/lib/model/project';
 import { clamp, formatTimecode } from '@/lib/model/time';
@@ -23,9 +23,12 @@ export function Timeline() {
   const shift = useEditorStore((state) => state.shift);
   const resize = useEditorStore((state) => state.resize);
   const selectCaption = useEditorStore((state) => state.selectCaption);
+  const setScrub = useEditorStore((state) => state.setScrub);
 
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragKind | null>(null);
+  /** 마우스가 가리키는 원본 시각. 가이드를 그리고 자르기 기준점이 된다. */
+  const [hoverSourceMs, setHoverSourceMs] = useState<number | null>(null);
 
   const sourceDurationMs = project?.source.durationMs ?? 0;
 
@@ -64,6 +67,25 @@ export function Timeline() {
     [project, posToSourceMs, seek, trim, shift, resize],
   );
 
+  /**
+   * 마우스를 따라 가이드를 옮기고 그 지점을 화면에 미리 보여준다.
+   * 재생 헤드는 건드리지 않으므로, 훑어보다 마음에 안 들면 그냥 벗어나면 된다.
+   */
+  const updateHover = useCallback(
+    (event: React.PointerEvent) => {
+      if (!project) return;
+      const sourceMs = posToSourceMs(event.clientX);
+      setHoverSourceMs(sourceMs);
+      setScrub(sourceMs - project.clip.inMs);
+    },
+    [project, posToSourceMs, setScrub],
+  );
+
+  const clearHover = useCallback(() => {
+    setHoverSourceMs(null);
+    setScrub(null);
+  }, [setScrub]);
+
   const endDrag = useCallback((event: React.PointerEvent) => {
     if (!dragRef.current) return;
     (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
@@ -100,7 +122,11 @@ export function Timeline() {
           (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
           handleMove(event);
         }}
-        onPointerMove={handleMove}
+        onPointerMove={(event) => {
+          handleMove(event);
+          updateHover(event);
+        }}
+        onPointerLeave={clearHover}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         className="relative h-16 w-full touch-none select-none rounded-lg bg-neutral-900"
@@ -130,6 +156,37 @@ export function Timeline() {
           className="pointer-events-none absolute inset-y-0 w-0.5 bg-red-500"
           style={{ left: pct(playheadSourceMs) }}
         />
+
+        {hoverSourceMs !== null && (
+          <div
+            className="pointer-events-none absolute inset-y-0 z-10"
+            style={{ left: pct(hoverSourceMs) }}
+          >
+            <div className="absolute inset-y-0 w-px -translate-x-1/2 bg-amber-400" />
+
+            <div
+              className="pointer-events-auto absolute top-1 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap"
+              // 버튼 위에서는 가이드를 옮기지 않는다. 옮기면 버튼이 커서에서 달아난다.
+              onPointerMove={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <CutButton
+                label="◀ 앞 자르기"
+                title={`${formatTimecode(hoverSourceMs)} 이전을 잘라냅니다`}
+                onClick={() => trim(hoverSourceMs, project.clip.outMs)}
+              />
+              <CutButton
+                label="뒤 자르기 ▶"
+                title={`${formatTimecode(hoverSourceMs)} 이후를 잘라냅니다`}
+                onClick={() => trim(project.clip.inMs, hoverSourceMs)}
+              />
+            </div>
+
+            <span className="absolute bottom-1 left-0 -translate-x-1/2 rounded bg-amber-400 px-1 font-mono text-[10px] text-black">
+              {formatTimecode(hoverSourceMs)}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="relative h-9 w-full rounded-lg bg-neutral-900/60">
@@ -247,5 +304,26 @@ function ResizeHandle({
     >
       <div className="h-3 w-0.5 rounded-full bg-white/70" />
     </div>
+  );
+}
+
+function CutButton({
+  label,
+  title,
+  onClick,
+}: {
+  label: string;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-medium text-black shadow transition hover:bg-amber-300"
+    >
+      {label}
+    </button>
   );
 }
